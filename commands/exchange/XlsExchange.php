@@ -9,8 +9,6 @@
 namespace app\commands\exchange;
 
 use yii\helpers\Json;
-use yii2tech\spreadsheet\Spreadsheet;
-use yii\data\ArrayDataProvider;
 
 
 class XlsExchange
@@ -49,7 +47,9 @@ class XlsExchange
             $validItems = $this->validateItemsBarcodes($data['items']);
 
             $xlsTempFilePath = $storage->getTempFilePath();
-            $this->exportToXlsxFile($validItems, $xlsTempFilePath);
+
+            $exporter = new SpreadsheetExporter($storage->getOutputXlsxFileName());
+            $exporter->exportToTempFile($validItems, $xlsTempFilePath);
 
             $storage->save($xlsTempFilePath);
 
@@ -100,57 +100,6 @@ class XlsExchange
         }
 
         return $validItems;
-    }
-
-    /**
-     * @param array $items
-     *
-     * @return string
-     */
-    private function exportToXlsxFile(array $items, string $tempFilePath)
-    {
-
-        $exporter = $this->getSpreadsheet($items);
-        $exporter->writerType = 'Xlsx';
-        $exporter->save($tempFilePath);
-
-    }
-
-    /**
-     * @param array $items
-     *
-     * @return \yii2tech\spreadsheet\Spreadsheet
-     */
-    private function getSpreadsheet(array $items) : Spreadsheet
-    {
-
-        return new Spreadsheet([
-            'dataProvider' => new ArrayDataProvider([
-                'allModels' => $items
-            ]),
-            'columns'      => [
-                [
-                    'attribute' => 'id'
-                ],
-                [
-                    'attribute' => 'item.barcode',
-                    'header'    => 'ШК'
-                ],
-                [
-                    'attribute' => 'item.name',
-                    'header'    => 'Название'
-                ],
-                [
-                    'attribute' => 'amount',
-                    'header'    => 'Кол-во'
-                ],
-                [
-                    'attribute' => 'price',
-                    'header'    => 'Сумма'
-                ],
-            ],
-        ]);
-
     }
 
 }

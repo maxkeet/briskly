@@ -15,16 +15,19 @@ class XlsExchangeController extends Controller
     public function actionIndex()
     {
 
+        //for saving on FTP
         $storage = new Storage(new FtpProperties(
             'localhost',
             'briskly',
             'ftp',
             'ftp'
         ));
+
+        //for saving on local storage
 //        $storage = new Storage();
 
-        $storage->setInputJsonFile('order1.json');
-        $storage->setOutputXlsxFile('items.xlsx');
+        $storage->setInputJsonFile('order.json');
+        $storage->setOutputXlsxFile('items.html');
 
         $xlsExchange = new XlsExchange();
         $xlsExchange->export($storage);

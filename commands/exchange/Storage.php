@@ -10,6 +10,9 @@ namespace app\commands\exchange;
 
 use yii2mod\ftp\FtpClient;
 
+/**
+ * This class is intended for performing operations with files
+ */
 class Storage
 {
     const STORAGE_PATH = 'storage';
@@ -23,15 +26,10 @@ class Storage
      * @var FtpProperties
      */
     private $ftpProperties;
-
     /**
      * @var resource
      */
     public $tempFileResource;
-
-    /**
-     * @return string
-     */
 
     public function __construct($ftpProperties = null)
     {
@@ -59,7 +57,6 @@ class Storage
 
     }
 
-
     /**
      * @param string $fileName
      */
@@ -71,6 +68,11 @@ class Storage
     public function getInputJsonFile()
     {
         return $this->inputJsonFile;
+    }
+
+    public function getOutputXlsxFileName()
+    {
+        return $this->outputXlsxFileName;
     }
 
     /**
