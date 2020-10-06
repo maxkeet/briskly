@@ -11,32 +11,10 @@ namespace app\commands\exchange;
 use yii\helpers\Json;
 use yii2tech\spreadsheet\Spreadsheet;
 use yii\data\ArrayDataProvider;
-use yii2mod\ftp\FtpClient;
 
 
 class XlsExchange
 {
-
-    const STORAGE_PATH = 'storage';
-    const BARCODE_LENGTH = 13;
-
-    /**
-     * @var resource
-     */
-    public $spreadsheetTempFileResource;
-    /**
-     * @var string
-     */
-    private $OutputXlsxFileName;
-    /**
-     * @var FtpConnection
-     */
-    private $ftpProperties;
-
-    /**
-     * @var file
-     */
-    private $inputJsonFile;
 
     /**
      * @var array
@@ -50,67 +28,34 @@ class XlsExchange
     }
 
     /**
-     * @param \app\commands\exchange\FtpProperties $connection
+     * Decode JSON
+     * Validate barcodes
+     * Export items to to spreadsheet
+     * Save spreadsheet to .xlsx
+     *
+     * @param \app\commands\exchange\Storage $storage
      */
-    public function setFTPProperties(FtpProperties $connection)
-    {
-        $this->ftpProperties = $connection;
-    }
-
-    /**
-     * @param string $filePath
-     */
-    public function setInputJsonFile(string $filePath)
-    {
-
-        $absFilePath = $this->getStoragePath() . '/' . $filePath;
-
-        try {
-            if (file_exists($absFilePath)) {
-                $this->inputJsonFile = file_get_contents($absFilePath);
-            } else {
-                throw new \Exception('File "' . $absFilePath . '" not found');
-            }
-        } catch (\Exception $e) {
-            echo $e->getMessage();
-            exit;
-        }
-
-    }
-
-    public function setOutputXlsxFile($fileName)
-    {
-        $this->OutputXlsxFileName = $fileName;
-    }
-
-    /**
-     * decode JSON
-     * validate barcodes
-     * export to spreadsheet
-     * save to .xlsx
-     */
-    public function export()
+    public function export(Storage $storage)
     {
 
         try {
 
-            $data = Json::decode($this->inputJsonFile);
+            $data = Json::decode($storage->getInputJsonFile());
 
             if (!$data['items']) {
                 throw new \Exception('Not have items in JSON file');
             }
 
-            $validItems = $this->getOnlyEAN13BarcodeItems($data['items']);
+            $validItems = $this->validateItemsBarcodes($data['items']);
 
-            $this->spreadsheetTempFileResource = tmpfile();
-            $xlsxTempFilePath = $this->exportToXlsx($validItems);
+            $xlsTempFilePath = $storage->getTempFilePath();
+            $this->exportToXlsxFile($validItems, $xlsTempFilePath);
 
-            $this->saveFile($xlsxTempFilePath);
-
-            fclose($this->spreadsheetTempFileResource);
+            $storage->save($xlsTempFilePath);
 
         } catch (\Exception $e) {
             echo $e->getMessage();
+            exit;
         }
     }
 
@@ -137,46 +82,38 @@ class XlsExchange
     }
 
     /**
+     * @param array $items
+     *
+     * @return array
+     */
+    private function validateItemsBarcodes(array $items) : array
+    {
+
+        $validItems = [];
+
+        foreach ($items as $item) {
+            if (ValidateBarcodeHelper::checkEAN13($item['item']['barcode'])) {
+                $validItems[] = $item;
+            } else {
+                $this->storedInvalidItems[] = $item;
+            }
+        }
+
+        return $validItems;
+    }
+
+    /**
+     * @param array $items
+     *
      * @return string
      */
-    private function getStoragePath() : string
+    private function exportToXlsxFile(array $items, string $tempFilePath)
     {
-        return \Yii::getAlias('@app') . '/' . self::STORAGE_PATH;
-    }
 
-    /**
-     * @param string $tempFilePath
-     */
-    private function saveFile(string $tempFilePath)
-    {
-        if ($this->ftpProperties) {
-            $this->saveToFTP($tempFilePath);
-        } else {
-            $this->saveToStorage($tempFilePath);
-        }
-    }
+        $exporter = $this->getSpreadsheet($items);
+        $exporter->writerType = 'Xlsx';
+        $exporter->save($tempFilePath);
 
-    /**
-     * @param string $tempFilePath
-     *
-     * @throws \yii2mod\ftp\FtpException
-     */
-    private function saveToFTP(string $tempFilePath)
-    {
-        $ftp = new FtpClient();
-        $ftp->connect($this->ftpProperties->ftpHost);
-        $ftp->login($this->ftpProperties->ftpLogin, $this->ftpProperties->ftpPassword);
-        $ftp->chdir($this->ftpProperties->ftpDir);
-        $ftp->put($this->OutputXlsxFileName, $tempFilePath);
-
-    }
-
-    /**
-     * @param string $tempFilePath
-     */
-    private function saveToStorage(string $tempFilePath)
-    {
-        rename($tempFilePath, $this->getStoragePath() . '/' . $this->OutputXlsxFileName);
     }
 
     /**
@@ -184,20 +121,6 @@ class XlsExchange
      *
      * @return \yii2tech\spreadsheet\Spreadsheet
      */
-    private function exportToXlsx(array $items)
-    {
-
-        $exporter = $this->getSpreadsheet($items);
-
-        $tempFilePath = stream_get_meta_data($this->spreadsheetTempFileResource)['uri'];
-
-        $exporter->writerType = 'Xlsx';
-        $exporter->save($tempFilePath);
-
-        return $tempFilePath;
-
-    }
-
     private function getSpreadsheet(array $items) : Spreadsheet
     {
 
@@ -228,74 +151,6 @@ class XlsExchange
             ],
         ]);
 
-    }
-
-    /**
-     * @param array $items
-     *
-     * @return array
-     */
-    private function getOnlyEAN13BarcodeItems(array $items) : array
-    {
-
-        $validItems = [];
-
-        foreach ($items as $item) {
-            if ($this->checkEAN13($item['item']['barcode'])) {
-                $validItems[] = $item;
-            } else {
-                $this->storedInvalidItems[] = $item;
-            }
-        }
-
-        return $validItems;
-    }
-
-    /**
-     * @param string $barcode
-     *
-     * @return bool
-     */
-    private function checkEAN13(string $barcode) : bool
-    {
-
-        if (strlen($barcode) != self::BARCODE_LENGTH) {
-            //            throw new Exception('Barcode lengh most be 13 digits');
-            return false;
-        }
-
-        if (!ctype_digit($barcode)) {
-            //            throw new Exception('Barcode contain not only digits');
-            return false;
-        }
-
-        return $this->barcodeControlDigitIsValid($barcode);
-
-    }
-
-    /**
-     * @param string $barcode
-     *
-     * @return bool
-     */
-    private function barcodeControlDigitIsValid(string $barcode) : bool
-    {
-
-        $barcodeArr = str_split($barcode);
-
-        $evenSum = 0;
-        $oddSum = 0;
-        $i = 0;
-        while ($i < self::BARCODE_LENGTH - 2) {
-            $oddSum += $barcodeArr[$i];
-            $i++;
-            $evenSum += $barcodeArr[$i];
-            $i++;
-        }
-
-        $sum = $evenSum + $oddSum * 3;
-
-        return ($sum + $barcode[12]) % 10 == 0;
     }
 
 }
