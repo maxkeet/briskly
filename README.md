@@ -11,10 +11,12 @@ INSTALLATION
 ------------
 
 For get depencies of project:
-composer update
+
+        composer update
 
 For start processing:
-yii xls-exchange
+
+        yii xls-exchange
 
 USE
 ------------
